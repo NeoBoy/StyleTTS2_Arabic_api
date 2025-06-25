@@ -98,7 +98,7 @@ RUN echo "Downloading main.py..." && \
     for i in 1 2 3; do \
         wget --timeout=60 --tries=2 \
             -O main.py \
-            "https://raw.githubusercontent.com/NeoBoy/StyleTTS2_Arabic/main/dockerApp/main.py" && \
+            "https://raw.githubusercontent.com/NeoBoy/StyleTTS2_Arabic_api/main/main.py" && \
         echo "main.py downloaded successfully" && break || \
         (echo "Attempt $i failed, waiting 5s before retry..." && sleep 5); \
     done
