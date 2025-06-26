@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from scipy.io.wavfile import write as write_wav  # Import write_wav from scipy.io to save audio
-from inferenceMSP import inferenceMSP, load_models  # Import inferenceMSP from the refactored script
+from inferenceMSP import inferenceMSP, load_models, load_model_weights  # Import inferenceMSP from the refactored script
 import phonemizer
 
 # Initialize FastAPI app
@@ -34,6 +34,18 @@ model_cache = {}
 
 # Function to load the model and parameters
 def load_model_once():
+    # Dynamically check which model files are available in the models directory
+    model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.pth')]
+    if not model_files:
+        raise HTTPException(status_code=500, detail="No model files found in the models directory.")
+
+    # Select the latest model based on file naming convention (you can change this logic)
+    model_filename = sorted(model_files)[-1]  # Choose the latest model (you could change this logic)
+    model_path = os.path.join(MODEL_DIR, model_filename)
+
+    if not os.path.isfile(model_path):
+        raise HTTPException(status_code=500, detail=f"Model file {model_filename} not found.")
+    
     # Ensure the correct path to the config file
     config_path = "/app/models/config.yml"  # Corrected path to the config.yml file
     if not os.path.isfile(config_path):
@@ -43,14 +55,17 @@ def load_model_once():
     with open(config_path, 'r') as config_file:
         config = yaml.safe_load(config_file)  # Load the configuration
     
-    # Load the model and model parameters
+    # Load model architecture
     model, model_params = load_models(config, device)
+
+    # Load model weights
+    model = load_model_weights(model, model_path, device)
+
+    # Cache the model
     model_cache['model'] = model
     model_cache['params'] = model_params
-    print(f"Model loaded and cached with config. Using device: {device}.")
     
-    # Display the model and config paths
-    model_path = os.path.join(MODEL_DIR, "model24.pth")  # Assuming model24.pth is the model filename
+    # Display the model and config paths 
     print(f"Model path: {model_path}")
     print(f"Config path: {config_path}")
 
@@ -111,7 +126,7 @@ async def set_device(request: DeviceRequest):
     load_model_once()  # Reload the model with the new device
     return {"message": f"Device switched to {device}", "current_device": device}
 
-@app.post("/tts/")
+@app.post("/tts/")  # Endpoint to generate TTS
 async def generate_tts(request: TTSRequest):
     # Use the device passed in the request, or default to the chosen one at startup
     tts_device = request.device if request.device else device
@@ -129,25 +144,25 @@ async def generate_tts(request: TTSRequest):
 
     # Select the correct reference audio based on speaker gender
     if request.speaker_gender == "Male":
-        ref_audio = "ref_audioM.wav"  # Male reference audio
+        ref_audio = "ref_audioM.wav"  # Male reference audio in the working directory
     elif request.speaker_gender == "Female":
-        ref_audio = "ref_audioF.wav"  # Female reference audio
+        ref_audio = "ref_audioF.wav"  # Female reference audio in the working directory
     else:
         raise HTTPException(status_code=400, detail="Invalid speaker gender. Use 'Male' or 'Female'.")
 
     # Start timing the inference
     start_time = time.time()
 
-    # Call inferenceMSP with no sampler (since diffusion is not used)
+    # Generate the TTS output using inferenceMSP (no sampler, diffusion not used)
     wav = inferenceMSP(
         model,
         model_params,
         phonemes,
-        sampler=None,  # Set sampler to None (no diffusion needed)
+        sampler=None,  # No diffusion
         device=tts_device,
         diffusion_steps=5,  # Fixed number of diffusion steps (won't be used)
         embedding_scale=request.embedding_scale,
-        ref_audio=ref_audio,  # Use the reference audio based on gender
+        ref_audio=ref_audio,  # Use reference audio based on gender
         no_diff=True  # Always apply style without diffusion
     )
 
