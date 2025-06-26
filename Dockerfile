@@ -22,6 +22,9 @@ RUN pip install phonemizer librosa scipy pydantic fastapi uvicorn
 # Clone the repository directly into the current working directory
 RUN git clone https://github.com/NeoBoy/StyleTTS2_Arabic.git .
 
+# Pull the latest changes from the cloned repository
+RUN git pull origin main  # Pull the latest changes from the 'main' branch
+
 # Install the repository's Python dependencies
 RUN pip install -r /app/requirements.txt
 

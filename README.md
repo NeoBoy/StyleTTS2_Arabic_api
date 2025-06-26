@@ -68,28 +68,156 @@ It should return a message like:
 
 ### Step 5: Test the API
 
-#### Switch Device (CPU/GPU)
 
-You can switch the device between **CPU** and **GPU** using the `/set_device/` endpoint. By default, the API selects **GPU** if available. To switch devices, use:
+
+#### a. **Health Check (Check if the API is running)**
+
+This curl command checks if your API is up and running.
 
 ```bash
-curl -X 'POST'   'http://localhost:8000/set_device/'   -H 'Content-Type: application/json'   -d '{
+curl -X GET "http://localhost:8000/"
+```
+
+**Expected Output**:
+
+```json
+{
+  "message": "Arabic Multi-Speaker TTS API. Use POST /tts to generate speech."
+}
+```
+
+---
+
+#### b. **Switch Device (CPU/GPU)**
+
+You can use this curl command to switch between **CPU** and **GPU**. By default, the API uses **GPU** if available, but you can explicitly change it.
+
+- **Switch to CPU**:
+
+```bash
+curl -X POST "http://localhost:8000/set_device/" -H "Content-Type: application/json" -d '{
   "device": "cpu"
 }'
 ```
 
-#### Generate TTS (Text-to-Speech)
-
-To generate TTS, send a POST request to `/tts/` with the desired text and speaker gender. Here's an example using `curl` to generate speech for the Arabic text "السَّلاَمُ عَلَيْكُمْ":
+- **Switch to GPU**:
 
 ```bash
-curl -X 'POST'   'http://localhost:8000/tts/'   -H 'Content-Type: application/json'   -d '{
-  "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
-  "speaker_gender": "Male",
-  "embedding_scale": 1.0
+curl -X POST "http://localhost:8000/set_device/" -H "Content-Type: application/json" -d '{
+  "device": "cuda"
 }'
 ```
 
+**Expected Output** (for both CPU and GPU switches):
+
+```json
+{
+  "message": "Device switched to cpu",  # or "cuda"
+  "current_device": "cpu"  # or "cuda"
+}
+```
+
+---
+
+#### c. **Generate TTS for Male Speaker**
+
+To generate speech for the Arabic text `"السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ"`, use the following curl command.
+
+- **Male Voice (GPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
+  "speaker_gender": "Male",
+  "device": "cuda",
+  "embedding_scale": 1.0
+}' --output synthesized_audio_male.wav
+```
+
+- **Male Voice (CPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
+  "speaker_gender": "Male",
+  "device": "cpu",
+  "embedding_scale": 1.0
+}' --output synthesized_audio_male.wav
+```
+
+This command will generate the audio file for the **male** voice and save it as `synthesized_audio_male.wav`.
+
+**Expected Output**:
+
+The audio will be returned and saved in the specified `.wav` file (e.g., `synthesized_audio_male.wav`).
+
+---
+
+#### d. **Generate TTS for Female Speaker**
+
+Similarly, you can generate speech for the **female** voice using the following commands.
+
+- **Female Voice (GPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
+  "speaker_gender": "Female",
+  "device": "cuda",
+  "embedding_scale": 1.0
+}' --output synthesized_audio_female.wav
+```
+
+- **Female Voice (CPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
+  "speaker_gender": "Female",
+  "device": "cpu",
+  "embedding_scale": 1.0
+}' --output synthesized_audio_female.wav
+```
+
+This command will generate the audio file for the **female** voice and save it as `synthesized_audio_female.wav`.
+
+**Expected Output**:
+
+The audio will be returned and saved in the specified `.wav` file (e.g., `synthesized_audio_female.wav`).
+
+---
+
+#### e. **Example for Multiple Speaker Generation**
+
+You can test both **male** and **female** voices using different curl commands. The difference is only in the `"speaker_gender"` field.
+
+- **Male Voice (default GPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "أهلاً وسهلاً في API تحويل النص إلى كلام",
+  "speaker_gender": "Male"
+}' --output male_output.wav
+```
+
+- **Female Voice (default GPU)**:
+
+```bash
+curl -X POST "http://localhost:8000/tts/" -H "Content-Type: application/json" -d '{
+  "text": "أهلاً وسهلاً في API تحويل النص إلى كلام",
+  "speaker_gender": "Female"
+}' --output female_output.wav
+```
+
+---
+
+### Summary of curl Command Usage:
+
+- **Check Health**: `GET /`
+- **Switch Device**: `POST /set_device/`
+- **Generate TTS**: `POST /tts/`
+  - With options for **CPU/GPU** and **Male/Female** voice selection.
+- **Save Generated Audio**: Use the `--output` flag to save the response file as `.wav`.
 This will return a `.wav` file as a response.
 
 #### Testing in Google Colab (Optional):
@@ -113,7 +241,6 @@ with open("synthesized_audio.wav", "wb") as f:
 ```
 
 This will save the response as `synthesized_audio.wav`, which can be played using any audio player.
-
 
 
 ## Notes

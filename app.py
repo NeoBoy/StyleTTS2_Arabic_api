@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from scipy.io.wavfile import write as write_wav  # Import write_wav from scipy.io to save audio
-from inferenceMSP import inferenceMSP, load_models, load_model_weights  # Import inferenceMSP from the refactored script
+from inferenceMSP import inferenceMSP_fastapi, load_models, load_model_weights  # Import inferenceMSP_fastapi from the refactored script
 import phonemizer
 
 # Initialize FastAPI app
@@ -16,7 +16,6 @@ app = FastAPI()
 class TTSRequest(BaseModel):
     text: str
     speaker_gender: str
-    embedding_scale: float = 1.0  # Default embedding scale
     device: str = None  # Allow device selection (either "cpu" or "cuda")
 
 class DeviceRequest(BaseModel):
@@ -79,10 +78,10 @@ def load_model_once():
         ref_audio = "ref_audioM.wav"  # Can use ref_audioM.wav or ref_audioF.wav for warm-up
         sampler = None  # No diffusion, as we are warming up with style transfer only
         
-        # Call inferenceMSP with dummy data to warm up
+        # Call inferenceMSP_fastapi with dummy data to warm up
         try:
             print("Warming up the model with dummy data...")
-            inferenceMSP(
+            inferenceMSP_fastapi(
                 model,
                 model_params,
                 phonemes,
@@ -153,15 +152,15 @@ async def generate_tts(request: TTSRequest):
     # Start timing the inference
     start_time = time.time()
 
-    # Generate the TTS output using inferenceMSP (no sampler, diffusion not used)
-    wav = inferenceMSP(
+    # Generate the TTS output using inferenceMSP_fastapi (no sampler, diffusion not used)
+    wav = inferenceMSP_fastapi(
         model,
         model_params,
         phonemes,
         sampler=None,  # No diffusion
         device=tts_device,
         diffusion_steps=5,  # Fixed number of diffusion steps (won't be used)
-        embedding_scale=request.embedding_scale,
+        embedding_scale=1.0,
         ref_audio=ref_audio,  # Use reference audio based on gender
         no_diff=True  # Always apply style without diffusion
     )
