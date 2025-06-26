@@ -114,33 +114,7 @@ with open("synthesized_audio.wav", "wb") as f:
 
 This will save the response as `synthesized_audio.wav`, which can be played using any audio player.
 
-## Dockerfile
 
-Here is a simple `Dockerfile` for this project:
-
-```dockerfile
-# Use the official PyTorch image with CUDA support
-FROM pytorch/pytorch:2.5.1-cuda11.8-cudnn9-runtime
-
-# Set the working directory in the container
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y     git     wget     espeak-ng     libsndfile1     python3-dev     python3-pip     && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install phonemizer librosa scipy pydantic fastapi uvicorn
-
-# Copy the application code
-COPY . /app
-
-# Expose the port the app runs on
-EXPOSE 8000
-
-# Set the command to run the FastAPI app with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-```
 
 ## Notes
 
