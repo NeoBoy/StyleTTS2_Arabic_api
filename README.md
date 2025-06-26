@@ -55,7 +55,7 @@ This command will run the FastAPI app, and it will be accessible at `http://loca
 Once the API is running, you can access it at `http://localhost:8000`. You can check the status of the API by visiting:
 
 ```
-GET http://localhost:8000/
+http://localhost:8000/
 ```
 
 It should return a message like:
