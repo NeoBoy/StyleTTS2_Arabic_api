@@ -40,8 +40,38 @@ def init_models():
 
 @app.on_event("startup")
 async def on_startup():
+    # 1) Load models
     init_models()
-    print("Ready on devices:", ", ".join(MODEL_CACHE.keys()))
+    print("Models ready on devices:", ", ".join(MODEL_CACHE.keys()))
+
+    # 2) Warm up CUDA (dummy inference) to JIT kernels & allocate memory
+    if "cuda" in MODEL_CACHE:
+        try:
+            dev = "cuda"
+            model, params = MODEL_CACHE[dev]
+            # use the same phonemizer backend as in /tts endpoint
+            backend = phonemizer.backend.EspeakBackend(
+                language="ar", preserve_punctuation=True, with_stress=True
+            )
+            dummy_text = "سلام"
+            dummy_phonemes = backend.phonemize([dummy_text])[0]
+            # choose a reference audio (Male by default)
+            ref = "ref_audioM.wav"
+            # run a very short dummy inference
+            _ = inferenceMSP_fastapi(
+                model=model,
+                model_params=params,
+                phonemes=dummy_phonemes,
+                sampler=None,
+                device=dev,
+                diffusion_steps=5,
+                embedding_scale=1.0,
+                ref_audio=ref,
+                no_diff=True,
+            )
+            print("[warmup][cuda] dummy inference completed")
+        except Exception as e:
+            print(f"[warmup][cuda] dummy inference failed: {e}")
 
 @app.get("/")
 def read_root():
