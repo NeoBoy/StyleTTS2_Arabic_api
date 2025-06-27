@@ -28,30 +28,7 @@ git clone https://github.com/your-username/arabic-tts-api.git
 cd arabic-tts-api
 ```
 
-2. Prepare your models/ folder
-
-Place the following files under `./models/`:
-
-- `config.yml`
-- One or more `.pth` checkpoints (the latest will be loaded)
-- `ref_audioM.wav` (male reference)
-- `ref_audioF.wav` (female reference)
-
-Your directory should look like:
-
-```
-arabic-tts-api/
-├─ app.py
-├─ inferenceMSP.py
-├─ models/
-│  ├─ config.yml
-│  ├─ model_epoch_10.pth
-│  ├─ ref_audioM.wav
-│  └─ ref_audioF.wav
-└─ requirements.txt
-```
-
-3. (Optional) Build & Run with Docker
+2. Build & Run with Docker
 
 ```bash
 # build
@@ -64,12 +41,21 @@ docker run --gpus all -p 8000:8000 arabic-tts-api
 docker run -p 8000:8000 arabic-tts-api
 ```
 
-4. Run Locally
+3. Using the docker image instead
+
+Download the image file from Google Drive [http://tiny.cc/arabicTTS]
 
 ```bash
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
+# load the image
+docker load -i arabic-tts-api.tar
+
+# run with GPU
+docker run --gpus all -p 8000:8000 arabic-tts-api:latest
+
+# or run on CPU only
+docker run -p 8000:8000 arabic-tts-api:latest
 ```
+
 
 ## API Endpoints
 
@@ -131,6 +117,8 @@ curl -X POST "http://localhost:8000/tts/"      -H "Content-Type: application/jso
        "device": "cpu"
      }'      --output female.wav
 ```
+
+
 
 ### Notes
 
