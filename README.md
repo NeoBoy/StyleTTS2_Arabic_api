@@ -24,7 +24,7 @@ A FastAPI service that converts Arabic text into speech using a pre-trained mult
 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/arabic-tts-api.git
+git clone https://github.com/NeoBoy/arabic-tts-api.git
 cd arabic-tts-api
 ```
 
