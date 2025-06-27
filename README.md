@@ -24,21 +24,21 @@ A FastAPI service that converts Arabic text into speech using a pre-trained mult
 1. Clone the repo
 
 ```bash
-git clone https://github.com/NeoBoy/arabic-tts-api.git
-cd arabic-tts-api
+git clone https://github.com/NeoBoy/arabic-tts-api.git arabictts_api
+cd arabictts_api
 ```
 
 2. Build & Run with Docker
 
 ```bash
 # build
-docker build -t arabic-tts-api .
+docker build -t arabictts_api .
 
 # run with GPU
-docker run --gpus all -p 8000:8000 arabic-tts-api
+docker run --gpus all -p 8000:8000 arabictts_api
 
 # or run on CPU only
-docker run -p 8000:8000 arabic-tts-api
+docker run -p 8000:8000 arabictts_api
 ```
 
 3. Using the docker image instead
@@ -47,13 +47,13 @@ Download the image file from Google Drive [http://tiny.cc/arabicTTS]
 
 ```bash
 # load the image
-docker load -i arabic-tts-api.tar
+docker load -i arabictts_api.tar
 
 # run with GPU
-docker run --gpus all -p 8000:8000 arabic-tts-api:latest
+docker run --gpus all -p 8000:8000 arabictts_api:latest
 
 # or run on CPU only
-docker run -p 8000:8000 arabic-tts-api:latest
+docker run -p 8000:8000 arabictts_api:latest
 ```
 
 
