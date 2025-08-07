@@ -1,61 +1,65 @@
+# Multi-Language TTS API (Arabic & English)
 
-# Arabic Multi-Speaker TTS API
-
-A FastAPI service that converts Arabic text into speech using a pre-trained multi-speaker TTS model. Each request can select a speaker gender (male/female) and choose between CPU or GPU (if available).
+A FastAPI service that converts Arabic and English text into speech using pre-trained StyleTTS2 models. Each request can select language, speaker gender (male/female), and choose between CPU or GPU for optimal performance.
 
 ## Features
 
-- **Arabic TTS**: High-quality speech synthesis from Arabic text.
-- **Speaker Gender**: Choose Male or Female voice.
-- **Per-Request Device Selection**: Optionally specify device: "cpu" or device: "cuda" in each /tts/ call (defaults to GPU if available, otherwise CPU).
-- **Lightweight Streaming**: Audio is streamed back as WAV—no temporary files.
+- **Multi-Language Support**: High-quality speech synthesis for Arabic and English text
+- **Speaker Gender Selection**: Choose Male or Female voice for both languages
+- **Flexible Device Selection**: Per-request device selection ("cpu" or "cuda") with automatic fallback
+- **Intelligent Text Processing**: Automatic text chunking for long texts to avoid model limitations
+- **Streaming Audio**: Audio is streamed back as WAV with no temporary files
+- **Comprehensive Error Handling**: Robust validation and error reporting
+- **Performance Monitoring**: Response headers include inference time and device usage
+
+## Supported Languages
+
+- **Arabic**: Native StyleTTS2 model with Arabic PLBERT
+- **English**: StyleTTS2 model with English PLBERT
+- **Device Support**: Both languages support CPU and CUDA acceleration
 
 ## Requirements
 
-- Docker (optional, for containerization)
+- Docker (recommended for easy deployment)
 - Python 3.10+
 - FastAPI
 - PyTorch (with CUDA support for GPU inference)
-- phonemizer
-- scipy
+- phonemizer (with espeak backend)
+- scipy, librosa, numpy
 
 ## Getting Started
 
-1. Clone the repo
+### Option 1: Build from Source
 
 ```bash
-git clone https://github.com/NeoBoy/arabic-tts-api.git arabictts_api
-cd arabictts_api
+# Clone the repository
+git clone https://github.com/NeoBoy/arabic-tts-api.git multilang_tts_api
+cd multilang_tts_api
+
+# Build Docker image
+docker build -t multilang_tts_api .
+
+# Run with GPU support
+docker run --gpus all -p 8000:8000 multilang_tts_api
+
+# Run CPU only
+docker run -p 8000:8000 multilang_tts_api
 ```
 
-2. Build & Run with Docker
+### Option 2: Use Pre-built Image
+
+Download the pre-built image from Google Drive: [http://tiny.cc/arabicTTS]
 
 ```bash
-# build
-docker build -t arabictts_api .
+# Load the pre-built image
+docker load -i multilang_tts_api.tar
 
-# run with GPU
-docker run --gpus all -p 8000:8000 arabictts_api
+# Run with GPU support
+docker run --gpus all -p 8000:8000 multilang_tts_api:latest
 
-# or run on CPU only
-docker run -p 8000:8000 arabictts_api
+# Run CPU only
+docker run -p 8000:8000 multilang_tts_api:latest
 ```
-
-3. Using the docker image instead
-
-Download the image file from Google Drive [http://tiny.cc/arabicTTS]
-
-```bash
-# load the image
-docker load -i arabictts_api.tar
-
-# run with GPU
-docker run --gpus all -p 8000:8000 arabictts_api:latest
-
-# or run on CPU only
-docker run -p 8000:8000 arabictts_api:latest
-```
-
 
 ## API Endpoints
 
@@ -64,10 +68,47 @@ docker run -p 8000:8000 arabictts_api:latest
 **Endpoint**: `GET /`
 
 **Response**:
-
 ```json
-{ 
-  "message": "Arabic MSP-TTS up. POST /tts/ to get audio." 
+{
+  "message": "Multi-language TTS API",
+  "description": "Arabic and English Text-to-Speech service",
+  "available_languages": ["arabic", "english"],
+  "supported_genders": ["Male", "Female"],
+  "total_model_instances": 4,
+  "device_info": {
+    "arabic": "CPU and CUDA supported",
+    "english": "CPU and CUDA supported"
+  },
+  "endpoints": {
+    "tts": "POST /tts/ - Generate speech from text",
+    "health": "GET / - API status"
+  },
+  "usage_example": {
+    "arabic": {
+      "text": "مرحبا بك في خدمة التحويل من النص إلى الكلام",
+      "speaker_gender": "Male",
+      "language": "arabic"
+    },
+    "english": {
+      "text": "Hello, welcome to our text-to-speech service",
+      "speaker_gender": "Female",
+      "language": "english"
+    }
+  }
+}
+```
+
+### Health Status
+
+**Endpoint**: `GET /health`
+
+**Response**:
+```json
+{
+  "status": "healthy",
+  "available_languages": ["arabic", "english"],
+  "cuda_available": true,
+  "devices": ["cpu", "cuda"]
 }
 ```
 
@@ -76,58 +117,237 @@ docker run -p 8000:8000 arabictts_api:latest
 **Endpoint**: `POST /tts/`
 
 **Headers**:
-
 - Content-Type: application/json
 - Accept: audio/wav
 
 **Request Body**:
-
 ```json
 {
-  "text":           "<Arabic text here>",
+  "text": "<Text in Arabic or English>",
   "speaker_gender": "Male" | "Female",
-  "device":         "cpu"  | "cuda"      // optional
+  "language": "arabic" | "english",
+  "device": "cpu" | "cuda"  // optional
 }
 ```
 
-Omitting `device` → defaults to `cuda` if GPU is available, otherwise `cpu`.
+**Parameters**:
+- `text`: Input text in the specified language
+- `speaker_gender`: Voice gender selection (`Male` or `Female`)
+- `language`: Target language (`arabic` or `english`)
+- `device`: Optional device selection (defaults to `cuda` if available, otherwise `cpu`)
 
 **Response**:
-
 - Status: 200 OK
-- WAV audio stream in the body
-- Header `X-Device` indicates which device ran inference
+- Content-Type: audio/wav
+- Response Headers:
+  - `X-Device`: Device used for inference
+  - `X-Language`: Language processed
+  - `X-Speaker-Gender`: Gender used
+  - `X-Inference-Time`: Processing time
+  - `X-Text-Chunks`: Number of text chunks processed
 
-**Example: Male Voice on GPU**
+## Usage Examples
 
+### Arabic Text-to-Speech
+
+**Male Voice (Default Device)**:
 ```bash
-curl -X POST "http://localhost:8000/tts/"      -H "Content-Type: application/json"      -d '{
-       "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
-       "speaker_gender": "Male",
-       "device": "cuda"
-     }'      --output male.wav
+curl -X POST "http://localhost:8000/tts/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "السَّلاَمُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ",
+    "speaker_gender": "Male",
+    "language": "arabic"
+  }' \
+  --output arabic_male.wav
 ```
 
-**Example: Female Voice on CPU**
-
+**Female Voice (CPU)**:
 ```bash
-curl -X POST "http://localhost:8000/tts/"      -H "Content-Type: application/json"      -d '{
-       "text": "أهلاً بكم في خدمة تحويل النص إلى كلام",
-       "speaker_gender": "Female",
-       "device": "cpu"
-     }'      --output female.wav
+curl -X POST "http://localhost:8000/tts/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "أهلاً وسهلاً بكم في خدمة تحويل النص إلى كلام",
+    "speaker_gender": "Female",
+    "language": "arabic",
+    "device": "cpu"
+  }' \
+  --output arabic_female_cpu.wav
 ```
 
+### English Text-to-Speech
 
+**Female Voice (CUDA)**:
+```bash
+curl -X POST "http://localhost:8000/tts/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello, welcome to our advanced text-to-speech service",
+    "speaker_gender": "Female",
+    "language": "english",
+    "device": "cuda"
+  }' \
+  --output english_female_cuda.wav
+```
 
-### Notes
+**Male Voice (Default Device)**:
+```bash
+curl -X POST "http://localhost:8000/tts/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "This is a demonstration of our English text-to-speech capabilities",
+    "speaker_gender": "Male",
+    "language": "english"
+  }' \
+  --output english_male.wav
+```
 
-- The service pre-loads the latest checkpoint on both CPU and GPU (if available) at startup for minimal latency.
-- Ensure your models/config.yml matches the architecture of your checkpoint.
-- Remove or rename extra .pth files if you want to control which checkpoint is used.
+### Python Example
 
-### Troubleshooting
+```python
+import requests
 
-- **500 Internal Server Error** → Verify that `config.yml` and at least one `.pth` file are present in `./models/`.
-- **Missing reference audio** → Make sure `ref_audioM.wav` and `ref_audioF.wav` exist in the working directory.
-- **GPU not detected** → Confirm CUDA and PyTorch GPU support are installed and that an NVIDIA GPU is available.
+# Arabic TTS
+arabic_payload = {
+    "text": "مرحباً بكم في خدمة التحويل من النص إلى الكلام",
+    "speaker_gender": "Female",
+    "language": "arabic",
+    "device": "cuda"
+}
+
+response = requests.post("http://localhost:8000/tts/", json=arabic_payload)
+if response.status_code == 200:
+    with open("arabic_output.wav", "wb") as f:
+        f.write(response.content)
+    print(f"Device used: {response.headers.get('X-Device')}")
+    print(f"Inference time: {response.headers.get('X-Inference-Time')}")
+
+# English TTS
+english_payload = {
+    "text": "Welcome to our multilingual text-to-speech service",
+    "speaker_gender": "Male",
+    "language": "english"
+}
+
+response = requests.post("http://localhost:8000/tts/", json=english_payload)
+if response.status_code == 200:
+    with open("english_output.wav", "wb") as f:
+        f.write(response.content)
+```
+
+## Performance Benchmarks
+
+Based on test results:
+
+| Language | Device | Gender | Avg. Inference Time | Performance Boost |
+|----------|--------|---------|-------------------|------------------|
+| Arabic   | CUDA   | Male    | ~0.5s            | 4-5x faster     |
+| Arabic   | CUDA   | Female  | ~0.3s            | 4-5x faster     |
+| Arabic   | CPU    | Male    | ~3.5s            | Baseline        |
+| Arabic   | CPU    | Female  | ~2.5s            | Baseline        |
+| English  | CUDA   | Male    | ~0.3s            | 6-8x faster     |
+| English  | CUDA   | Female  | ~0.3s            | 6-8x faster     |
+| English  | CPU    | Male    | ~2.3s            | Baseline        |
+| English  | CPU    | Female  | ~2.3s            | Baseline        |
+
+## Features & Limitations
+
+### ✅ Supported Features
+- Multi-language support (Arabic & English)
+- GPU acceleration with automatic fallback
+- Real-time streaming response
+- Automatic text chunking for long texts
+- Comprehensive error handling
+- Performance monitoring
+
+### ⚠️ Current Limitations
+- Maximum recommended text length: ~400 characters per chunk
+- Requires specific reference audio files for each gender
+- English female voice uses fallback reference audio
+- CUDA memory requirements for larger models
+
+## File Structure
+
+```
+multilang_tts_api/
+├── app.py                  # Main FastAPI application
+├── models/
+│   ├── config_ar.yml      # Arabic model configuration
+│   ├── config_en.yml      # English model configuration
+│   ├── model_ar.pth       # Arabic model weights
+│   ├── model_en.pth       # English model weights
+│   └── reference_audio/   # English reference audio files
+├── ref_audioM.wav         # Arabic male reference
+├── ref_audioF.wav         # Arabic female reference
+├── Utils/                 # Model utilities
+├── test_api.py           # Comprehensive API tests
+└── Dockerfile            # Container configuration
+```
+
+## Testing
+
+Run the comprehensive test suite:
+
+```bash
+python test_api.py
+```
+
+This will test:
+- Health endpoints
+- Both languages with all gender/device combinations
+- Error handling and edge cases
+- Performance and concurrent requests
+- Large text processing
+
+## Troubleshooting
+
+### Common Issues
+
+**500 Internal Server Error**:
+- Verify model files exist in `./models/` directory
+- Check that configuration files are valid YAML
+- Ensure reference audio files are present
+
+**Missing Reference Audio**:
+- Arabic: Ensure `ref_audioM.wav` and `ref_audioF.wav` exist
+- English: Check `models/reference_audio/` directory
+
+**GPU Not Detected**:
+- Confirm CUDA installation: `nvidia-smi`
+- Verify PyTorch CUDA support: `torch.cuda.is_available()`
+- Use `--gpus all` flag when running Docker
+
+**Text Length Errors**:
+- Keep individual texts under 400 characters
+- The API automatically chunks longer texts
+- Very long texts may require manual segmentation
+
+**Language Not Available**:
+- Check startup logs for model loading errors
+- Verify both model files and configs are present
+- Test with `/health` endpoint to see available languages
+
+### Debug Mode
+
+For development, run with detailed logging:
+
+```bash
+docker run --gpus all -p 8000:8000 -e DEBUG=1 multilang_tts_api
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Test with `python test_api.py`
+4. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Acknowledgments
+
+- StyleTTS2 for the base TTS architecture
+- PLBERT for multilingual text encoding
+- FastAPI for the web framework

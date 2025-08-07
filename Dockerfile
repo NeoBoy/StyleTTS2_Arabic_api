@@ -8,6 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     git \
     wget \
+    unzip \
     espeak-ng \
     libsndfile1 \
     build-essential \
@@ -30,9 +31,17 @@ RUN pip install -r /app/requirements.txt
 
 # Download the model files from Hugging Face
 WORKDIR /app/models
-RUN wget -O model24.pth https://huggingface.co/blits-ai/style_tts2_finetune_audiobook4GPU/resolve/main/epoch_00024.pth
-RUN wget -O config.yml https://huggingface.co/fadi77/StyleTTS2-LibriTTS-arabic/resolve/main/config.yml
+RUN wget -O model_ar.pth https://huggingface.co/blits-ai/style_tts2_finetune_audiobook4GPU/resolve/main/epoch_00024.pth
+RUN wget -O config_ar.yml https://huggingface.co/fadi77/StyleTTS2-LibriTTS-arabic/resolve/main/config.yml
 
+# Download  the English Model files
+RUN wget -O model_en.pth https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth
+RUN wget -O config_en.yml https://raw.githubusercontent.com/NeoBoy/StyleTTS2_Arabic/refs/heads/main/Configs/config_en.yml
+
+# Download and extract English reference audio files
+RUN wget -O reference_audio.zip https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/reference_audio.zip
+RUN unzip reference_audio.zip
+RUN rm reference_audio.zip
 
 # Reset the working directory back to /app to run the FastAPI app
 WORKDIR /app
