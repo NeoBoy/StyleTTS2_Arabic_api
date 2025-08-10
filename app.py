@@ -1,9 +1,11 @@
 import os, torch, yaml, time, phonemizer
 from io import BytesIO
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from scipy.io.wavfile import write as write_wav
+from typing import Optional
+import tempfile
 import librosa
 import nltk
 nltk.download('punkt_tab', quiet=True)  # Download punkt tokenizer
@@ -25,7 +27,7 @@ MODEL_CACHE = {}  # will hold { "arabic": {"cpu": (model, params), "cuda": ...},
 class TTSRequest(BaseModel):
     text: str
     speaker_gender: str
-    language: str = "arabic"  # new parameter with default
+    language: str = "arabic"
     device: str = None
 
 def fix_yaml_file(file_path):
@@ -362,19 +364,26 @@ def read_root():
         "supported_genders": ["Male", "Female"],
         "total_model_instances": total_devices,
         "endpoints": {
-            "tts": "POST /tts/ - Generate speech from text",
+            "tts": "POST /tts/ - Generate speech from text (supports both JSON and form data with optional reference audio)",
             "health": "GET / - API status"
         },
         "usage_example": {
-            "arabic": {
-                "text": "مرحبا بك في خدمة التحويل من النص إلى الكلام",
-                "speaker_gender": "Male",
-                "language": "arabic"
+            "default_audio": {
+                "method": "Form data",
+                "arabic": {
+                    "text": "مرحبا بك في خدمة التحويل من النص إلى الكلام",
+                    "speaker_gender": "Male",
+                    "language": "arabic"
+                },
+                "english": {
+                    "text": "Hello, welcome to our text-to-speech service",
+                    "speaker_gender": "Female", 
+                    "language": "english"
+                }
             },
-            "english": {
-                "text": "Hello, welcome to our text-to-speech service",
-                "speaker_gender": "Female", 
-                "language": "english"
+            "custom_audio": {
+                "method": "Form data with file upload",
+                "note": "Add reference_audio file to clone voice style"
             }
         }
     }
@@ -390,117 +399,222 @@ def health_check():
     }
 
 @app.post("/tts/")
-def generate_tts(req: TTSRequest):
-    # Validate language
-    if req.language not in MODEL_CACHE or not MODEL_CACHE[req.language]:
-        available_langs = [lang for lang in MODEL_CACHE if MODEL_CACHE[lang]]
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Language '{req.language}' not available. Available languages: {available_langs}"
-        )
+async def generate_tts(
+    text: str = Form(...),
+    speaker_gender: Optional[str] = Form(default=None),
+    language: str = Form(default="arabic"),
+    device: Optional[str] = Form(default=None),
+    reference_audio: Optional[UploadFile] = File(default=None)
+):
+    """
+    Generate TTS audio with optional custom reference audio.
     
-    # Determine device
-    dev = req.device or ("cuda" if req.language in MODEL_CACHE and "cuda" in MODEL_CACHE[req.language] else "cpu")
-    if dev not in MODEL_CACHE[req.language]:
-        available_devices = list(MODEL_CACHE[req.language].keys())
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Device '{dev}' not available for language '{req.language}'. Available devices: {available_devices}"
-        )
+    - **text**: Input text in the specified language
+    - **speaker_gender**: Voice gender selection (Male or Female)
+    - **language**: Target language (arabic or english)
+    - **device**: Optional device selection (cpu or cuda)
+    - **reference_audio**: Optional custom reference audio file for voice cloning
     
-    model, params = MODEL_CACHE[req.language][dev]
+    **Important**: When reference_audio is provided, the voice characteristics are determined entirely 
+    by the reference audio file. The speaker_gender parameter is ignored in this case.
+    
+    If no reference_audio is provided, uses default voice files based on language and gender.
+    """
+    
+    # Initialize temp_ref_path to None at the start to avoid UnboundLocalError
+    temp_ref_path = None
+    
+    try:
+        # Validate required parameters
+        if not text or not text.strip():
+            raise HTTPException(status_code=400, detail="'text' parameter is required and cannot be empty")
 
-    # Language-specific configuration
-    if req.language == "arabic":
-        # Arabic language settings
-        backend = phonemizer.backend.EspeakBackend(
-            language="ar", preserve_punctuation=True, with_stress=True
-        )
+        if speaker_gender not in ["Male", "Female"]:
+            raise HTTPException(status_code=400, detail="'speaker_gender' must be 'Male' or 'Female'")
+
+        if language not in ["arabic", "english"]:
+            raise HTTPException(status_code=400, detail="'language' must be 'arabic' or 'english'")
         
-        # Reference audio selection for Arabic
-        if req.speaker_gender == "Male":
-            ref = "ref_audioM.wav"  # Arabic male reference
-        elif req.speaker_gender == "Female":
-            ref = "ref_audioF.wav"  # Arabic female reference
+        # Validate language availability
+        if language not in MODEL_CACHE or not MODEL_CACHE[language]:
+            available_langs = [lang for lang in MODEL_CACHE if MODEL_CACHE[lang]]
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Language '{language}' not available. Available languages: {available_langs}"
+            )
+        
+        # Determine device
+        dev = device or ("cuda" if language in MODEL_CACHE and "cuda" in MODEL_CACHE[language] else "cpu")
+        if dev not in MODEL_CACHE[language]:
+            available_devices = list(MODEL_CACHE[language].keys())
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Device '{dev}' not available for language '{language}'. Available devices: {available_devices}"
+            )
+        
+        model, params = MODEL_CACHE[language][dev]
+        ref_type = "default"
+        
+        # Handle reference audio selection
+        if reference_audio:
+            # User provided custom reference audio
+            import mimetypes
+            filename_lower = reference_audio.filename.lower()
+            ct = reference_audio.content_type or ""
+            guessed_ct, _ = mimetypes.guess_type(reference_audio.filename)
+            allowed_ext = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
+            
+            is_ext_ok = filename_lower.endswith(allowed_ext)
+            is_ct_ok = ct.startswith('audio/')
+            is_guess_ok = (guessed_ct or '').startswith('audio/')
+            
+            if not (is_ct_ok or is_ext_ok or is_guess_ok):
+                print(f"[VALIDATION] Rejecting file: name={reference_audio.filename} "
+                      f"content_type='{ct}' guessed='{guessed_ct}' size_header={reference_audio.headers.get('content-length')}")
+                raise HTTPException(status_code=400, detail="Reference file must be an audio file (wav/mp3/flac/ogg)")
+            
+            # Save uploaded file to temporary location
+            temp_dir = tempfile.mkdtemp()
+            temp_ref_path = os.path.join(temp_dir, f"custom_ref_{int(time.time())}.wav")
+            
+            content = await reference_audio.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="Uploaded reference audio is empty")
+            # Optional: size limit (e.g. 5 MB)
+            if len(content) > 5 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Reference audio exceeds 5MB limit")
+            
+            with open(temp_ref_path, "wb") as f:
+                f.write(content)
+    
+            ref = temp_ref_path
+            ref_type = "custom"
+            print(f"🎤 CUSTOM REFERENCE DETECTED:")
+            print(f"Using custom reference audio: {reference_audio.filename} "
+                  f"(ct='{ct}' guessed='{guessed_ct}' bytes={len(content)})")            
+            print(f"   File size: {len(content)} bytes")
+            print(f"   Temp path: {temp_ref_path}")
+            print(f"   File exists: {os.path.exists(temp_ref_path)}")
+            
         else:
-            raise HTTPException(status_code=400, detail="speaker_gender must be 'Male' or 'Female'")
+            if language == "arabic":
+                if speaker_gender == "Male":
+                    ref = "ref_audioM.wav"
+                elif speaker_gender == "Female":
+                    ref = "ref_audioF.wav"
+                else:
+                    raise HTTPException(status_code=400, detail="speaker_gender must be 'Male' or 'Female'")
+            
+            elif language == "english":
+                if speaker_gender == "Male":
+                    ref = "models/reference_audio/4077-13754-0000.wav"
+                elif speaker_gender == "Female":
+                    ref = "models/reference_audio/1221-135767-0014.wav"
+                else:
+                    raise HTTPException(status_code=400, detail="speaker_gender must be 'Male' or 'Female'")
+            
+            ref_type = "default"
+            print(f"Using default reference audio: {ref}")
         
-        no_diff = True  # Arabic model uses no diffusion
-        diffusion_steps = 5  # Steps for Arabic
-        inferenceFUN = inferenceMSP_fastapi  # Use Arabic inference function
-
-    elif req.language == "english":
-        # English language settings
-        backend = phonemizer.backend.EspeakBackend(
-            language="en-us", preserve_punctuation=True, with_stress=True
-        )
+        # Verify reference audio file exists
+        if not os.path.exists(ref):
+            raise HTTPException(status_code=500, detail=f"Reference audio file not found: {ref}")
         
-        # Reference audio selection for English
-        if req.speaker_gender == "Male":
-            ref = "models/reference_audio/4077-13754-0000.wav"  # English male reference
-        elif req.speaker_gender == "Female":
-            ref = "models/reference_audio/1221-135767-0014.wav"  # English female reference
+        # Language-specific configuration
+        if language == "arabic":
+            backend = phonemizer.backend.EspeakBackend(
+                language="ar", preserve_punctuation=True, with_stress=True
+            )
+            no_diff = True
+            diffusion_steps = 5
+            inferenceFUN = inferenceMSP_fastapi
+        
+        elif language == "english":
+            backend = phonemizer.backend.EspeakBackend(
+                language="en-us", preserve_punctuation=True, with_stress=True
+            )
+            no_diff = False
+            diffusion_steps = 5
+            inferenceFUN = inferenceMSP_en
+        
         else:
-            raise HTTPException(status_code=400, detail="speaker_gender must be 'Male' or 'Female'")
-        
-        no_diff = False  # English model also uses no diffusion
-        diffusion_steps = 5  # Same steps as Arabic
-        inferenceFUN = inferenceMSP_en  # Use English inference function
-    
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported language: {req.language}")
+            raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
 
-    # Validate text input
-    if not req.text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
+        # Phonemize the text
+        try:
+            phonemes = backend.phonemize([text])[0]
+            if not phonemes.strip():
+                raise HTTPException(status_code=400, detail="Failed to phonemize text - text may contain unsupported characters")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Phonemization failed: {str(e)}")
 
-    # Phonemize the text
-    try:
-        phonemes = backend.phonemize([req.text])[0]
-        if not phonemes.strip():
-            raise HTTPException(status_code=400, detail="Failed to phonemize text - text may contain unsupported characters")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Phonemization failed: {str(e)}")
+        # Run inference
+        start = time.time()
+        try:
+            wav = inferenceFUN(
+                model=model,
+                model_params=params,
+                phonemes=phonemes,
+                sampler=None,
+                device=dev,
+                diffusion_steps=diffusion_steps,
+                embedding_scale=1.0,
+                ref_audio=ref,
+                no_diff=no_diff,
+            )
+            inference_time = time.time() - start
+            print(f"[{language}][{dev}][{ref_type}] Inference: {inference_time:.2f}s, no_diff={no_diff}")
+            
+        except Exception as e:
+            print(f"Inference failed: {e}")
+            raise HTTPException(status_code=500, detail=f"TTS inference failed: {str(e)}")
 
-    # Run inference
-    start = time.time()
-    try:
-        wav = inferenceFUN(
-            model=model,
-            model_params=params,
-            phonemes=phonemes,
-            sampler=None,
-            device=dev,
-            diffusion_steps=diffusion_steps,
-            embedding_scale=1.0,
-            ref_audio=ref,
-            no_diff=no_diff,
-        )
-        inference_time = time.time() - start
-        print(f"[{req.language}][{dev}] Inference: {inference_time:.2f}s, no_diff={no_diff}, steps={diffusion_steps}")
-        
-    except Exception as e:
-        print(f"Inference failed: {e}")
-        raise HTTPException(status_code=500, detail=f"TTS inference failed: {str(e)}")
-
-    # Prepare audio response
-    try:
-        buf = BytesIO()
-        write_wav(buf, 24000, wav)
-        buf.seek(0)
-        
-        return StreamingResponse(
-            buf, 
-            media_type="audio/wav",
-            headers={
+        # Prepare audio response
+        try:
+            buf = BytesIO()
+            write_wav(buf, 24000, wav)
+            buf.seek(0)
+            
+            headers = {
                 "X-Device": dev,
-                "X-Language": req.language,
-                "X-Speaker-Gender": req.speaker_gender,
+                "X-Language": language,
+                "X-Speaker-Gender": speaker_gender if not reference_audio else "custom-reference",
                 "X-Inference-Time": f"{inference_time:.2f}s",
-                "X-No-Diff": str(no_diff),
-                "Content-Disposition": f"attachment; filename=tts_{req.language}_{req.speaker_gender}.wav"
+                "X-Reference-Type": ref_type,
+                "X-Reference-File": reference_audio.filename if reference_audio else "default",
+                "Content-Disposition": f"attachment; filename=tts_{language}_{speaker_gender}_{ref_type}.wav"
             }
-        )
+
+            # Add warning header when custom reference overrides gender
+            if reference_audio and speaker_gender:
+                headers["X-Warning"] = "speaker_gender parameter ignored when custom reference audio is provided"
+
+            return StreamingResponse(buf, media_type="audio/wav", headers=headers)
+        except Exception as e:
+            print(f"Audio generation failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
+    
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        print(f"Audio generation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
+        # Log unexpected errors for debugging
+        import traceback
+        print(f"🚨 Unexpected error in TTS generation:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
+        
+    finally:
+        # Clean up temporary file - now temp_ref_path is always defined
+        if temp_ref_path and os.path.exists(temp_ref_path):
+            try:
+                os.remove(temp_ref_path)
+                # Only remove directory if it's empty and was created by us
+                temp_dir = os.path.dirname(temp_ref_path)
+                if temp_dir.startswith('/tmp/tmp') and os.path.exists(temp_dir):
+                    try:
+                        os.rmdir(temp_dir)
+                    except OSError:
+                        pass  # Directory not empty, that's fine
+                print(f"Cleaned up temporary reference file: {temp_ref_path}")
+            except Exception as e:
+                print(f"Warning: Could not clean up temporary file: {e}")

@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies
 RUN pip install --upgrade pip
-RUN pip install phonemizer librosa scipy pydantic fastapi uvicorn
+RUN pip install fastapi uvicorn torch torchaudio scipy librosa numpy phonemizer nltk pydantic python-multipart
 
 # Clone the repository directly into the current working directory
 RUN git clone https://github.com/NeoBoy/StyleTTS2_Arabic.git .
