@@ -112,15 +112,15 @@ def compute_style_en(path, device, model):
 from text_utils import TextCleaner
 textclenaer = TextCleaner()
 
-def inferenceMSP_en(model, model_params, phonemes, sampler, device, diffusion_steps=5, 
-                embedding_scale=1, ref_audio='./ref_audio.wav', no_diff=False):
+def inferenceMSP_en(model, model_params, phonemes, sampler, device, diffusion_steps=5, embedding_scale=1, 
+                    ref_audio='./ref_audio.wav', no_diff=False, alpha = 0.3, beta = 0.7):
     """Generate speech from phonemized text and speaker style."""
     
     sampler = DiffusionSampler(
-    model.diffusion.diffusion,
-    sampler=ADPM2Sampler(),
-    sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0), # empirical parameters
-    clamp=False
+        model.diffusion.diffusion,
+        sampler=ADPM2Sampler(),
+        sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0), # empirical parameters
+        clamp=False
     )
     
     # Tokenize input phonemes
@@ -161,6 +161,11 @@ def inferenceMSP_en(model, model_params, phonemes, sampler, device, diffusion_st
         # Split style vector into style and reference components
         style_vector = s_pred[:, 128:]
         reference_vector = s_pred[:, :128]
+        
+        reference_vector = alpha * reference_vector + (1 - alpha)  * ref_s[:, :128]
+        style_vector = beta * style_vector + (1 - beta)  * ref_s[:, 128:]
+
+        s_pred = torch.cat([reference_vector, style_vector], dim=-1)
 
         # Duration prediction
         duration_encoding = model.predictor.text_encoder(d_en, style_vector, input_lengths, text_mask)
@@ -534,6 +539,8 @@ async def generate_tts(
                 language="en-us", preserve_punctuation=True, with_stress=True
             )
             no_diff = False
+            alpha = 0.3
+            beta = 0.7
             diffusion_steps = 5
             inferenceFUN = inferenceMSP_en
         
@@ -551,17 +558,32 @@ async def generate_tts(
         # Run inference
         start = time.time()
         try:
-            wav = inferenceFUN(
-                model=model,
-                model_params=params,
-                phonemes=phonemes,
-                sampler=None,
-                device=dev,
-                diffusion_steps=diffusion_steps,
-                embedding_scale=1.0,
-                ref_audio=ref,
-                no_diff=no_diff,
-            )
+            if language == "english":
+                wav = inferenceFUN(
+                    model=model,
+                    model_params=params,
+                    phonemes=phonemes,
+                    sampler=None,
+                    device=dev,
+                    diffusion_steps=diffusion_steps,
+                    embedding_scale=1.0,
+                    ref_audio=ref,
+                    no_diff=no_diff,
+                    alpha=alpha,
+                    beta=beta,
+                )
+            else:
+                wav = inferenceFUN(
+                    model=model,
+                    model_params=params,
+                    phonemes=phonemes,
+                    sampler=None,
+                    device=dev,
+                    diffusion_steps=diffusion_steps,
+                    embedding_scale=1.0,
+                    ref_audio=ref,
+                    no_diff=no_diff,
+                )
             inference_time = time.time() - start
             print(f"[{language}][{dev}][{ref_type}] Inference: {inference_time:.2f}s, no_diff={no_diff}")
             
